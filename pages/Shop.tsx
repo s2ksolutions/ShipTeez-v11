@@ -56,12 +56,55 @@ export const Shop: React.FC = () => {
     // Expand state for category tree
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
+    // Progressive Loading Logic
     useEffect(() => {
         const loadProducts = async () => {
             setLoading(true);
-            const products = await db.getAllProducts();
-            setAllProducts(products);
-            setLoading(false);
+            try {
+                // 1. Fetch IDs first (Fast & Ordered by Backend)
+                const ids = await db.getProductIds();
+                
+                // 2. Initialize Skeletons
+                // This establishes the visual grid immediately so items don't "pop" into random places
+                const skeletons: Product[] = ids.map(id => ({
+                    id,
+                    title: '',
+                    description: '',
+                    slug: '',
+                    price: 0,
+                    category: '',
+                    hierarchy: [],
+                    tags: [],
+                    images: [],
+                    sizes: [],
+                    colors: [],
+                    stock: 0,
+                    sku: '',
+                    createdAt: 0,
+                    // Use a temporary property to flag loading state
+                    _loading: true 
+                } as any));
+                
+                setAllProducts(skeletons);
+                setLoading(false); // Enable rendering of skeletons
+
+                // 3. Fire Parallel Requests
+                // Using a simple batching to avoid overwhelming browser (10 concurrent)
+                const batchSize = 10;
+                for (let i = 0; i < ids.length; i += batchSize) {
+                    const batch = ids.slice(i, i + batchSize);
+                    await Promise.all(batch.map(async (id) => {
+                        const detail = await db.getProduct(id);
+                        if (detail) {
+                            // Update specific item in state, preserving array order
+                            setAllProducts(prev => prev.map(p => p.id === id ? detail : p));
+                        }
+                    }));
+                }
+            } catch (e) {
+                console.error("Failed to load products", e);
+                setLoading(false);
+            }
         };
         loadProducts();
     }, []);
@@ -75,7 +118,6 @@ export const Shop: React.FC = () => {
             let currentPath = "";
             parts.forEach((part, i) => {
                 currentPath = i === 0 ? part : `${currentPath}${CATEGORY_SEPARATOR}${part}`;
-                // Expand everything up to the selected one (optional: or include selected)
                 if (i < parts.length - 1) pathsToExpand.add(currentPath);
             });
             setExpandedCategories(prev => new Set([...prev, ...pathsToExpand]));
@@ -106,7 +148,7 @@ export const Shop: React.FC = () => {
         if (editingMax && maxInputRef.current) maxInputRef.current.focus();
     }, [editingMax]);
 
-    const visibleProducts = useMemo(() => allProducts.filter(p => !p.isHidden), [allProducts]);
+    const visibleProducts = useMemo(() => allProducts.filter(p => !(p as any)._loading && !p.isHidden), [allProducts]);
     const uniqueColors = useMemo(() => Array.from(new Set(visibleProducts.flatMap(p => p.colors || []))).filter(Boolean), [visibleProducts]);
     const uniqueSizes = useMemo(() => Array.from(new Set(visibleProducts.flatMap(p => p.sizes || []))).filter(Boolean), [visibleProducts]);
     
@@ -124,7 +166,6 @@ export const Shop: React.FC = () => {
         return Array.from(tags).sort((a, b) => a.localeCompare(b));
     }, [visibleProducts]);
 
-    // Calculate Available Specials based on products
     const availableSpecials = useMemo(() => {
         const options = new Set<string>();
         visibleProducts.forEach(p => {
@@ -133,7 +174,7 @@ export const Shop: React.FC = () => {
             if (p.isClearance) options.add('Clearance');
             if (p.isBogo) options.add('Buy 1 Get 1');
         });
-        return Array.from(options).sort(); // Default string sort gives alphabetical (B, C, F, O)
+        return Array.from(options).sort();
     }, [visibleProducts]);
     
     // --- TREE BUILDER ---
@@ -162,26 +203,27 @@ export const Shop: React.FC = () => {
     const displayedTags = useMemo(() => uniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())), [uniqueTags, tagSearch]);
 
     const filteredProducts = useMemo(() => {
-        return visibleProducts.filter(product => {
+        return allProducts.filter(product => {
+            // Keep skeletons in the list (they bypass filters to maintain grid structure during load)
+            if ((product as any)._loading) return true;
+
+            if (product.isHidden) return false;
+
             if (searchParam) {
                 const searchTerms = searchParam.toLowerCase().trim().split(/\s+/).filter(t => t.length > 0);
                 const matchesAllTerms = searchTerms.every(term => {
                     const inTitle = product.title.toLowerCase().includes(term);
                     const inTags = product.tags.some(t => t.toLowerCase().includes(term));
-                    const inHierarchy = product.hierarchy && product.hierarchy.some(h => h.toLowerCase().includes(term));
                     const inCategory = product.category.toLowerCase().includes(term);
-                    return inTitle || inTags || inHierarchy || inCategory;
+                    return inTitle || inTags || inCategory;
                 });
                 if (!matchesAllTerms) return false;
             }
 
             if (selectedCategory !== 'All') {
-                // Check if product category starts with selected category (Hierarchical filter)
-                // e.g. Selected: "Home", Product: "Home > Kitchen" -> Match
                 if (!product.category.startsWith(selectedCategory)) return false;
             }
 
-            // Specials Filtering
             if (selectedSpecials.length > 0) {
                 const matchesSpecials = selectedSpecials.every(special => {
                     switch (special) {
@@ -209,8 +251,7 @@ export const Shop: React.FC = () => {
                 const matchesAllFilters = selectedTags.every(filterTag => {
                     const filterLower = filterTag.toLowerCase();
                     const inTags = product.tags.some(t => t.toLowerCase() === filterLower);
-                    const inHierarchy = product.hierarchy ? product.hierarchy.some(h => h.toLowerCase() === filterLower) : false;
-                    return inTags || inHierarchy;
+                    return inTags;
                 });
                 if (!matchesAllFilters) return false;
             }
@@ -219,13 +260,17 @@ export const Shop: React.FC = () => {
 
             return true;
         }).sort((a, b) => {
+            // Loading items stay in place (or move to end if preferred, but neutral is smoother)
+            if ((a as any)._loading) return 1;
+            if ((b as any)._loading) return -1;
+
             switch (sortOption) {
                 case SortOption.PriceLow: return a.price - b.price;
                 case SortOption.PriceHigh: return b.price - a.price;
                 default: return b.createdAt - a.createdAt;
             }
         });
-    }, [visibleProducts, searchParam, selectedCategory, selectedColors, selectedSizes, selectedTags, selectedSpecials, priceRange, sortOption]);
+    }, [allProducts, searchParam, selectedCategory, selectedColors, selectedSizes, selectedTags, selectedSpecials, priceRange, sortOption]);
 
     const toggleFilter = (set: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
         set(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
@@ -268,7 +313,6 @@ export const Shop: React.FC = () => {
         }
     };
 
-    // Breadcrumb Parser
     const breadcrumbItems = useMemo(() => {
         if (!categoryParam || categoryParam === 'All') return undefined;
         const parts = categoryParam.split(CATEGORY_SEPARATOR);
@@ -280,7 +324,6 @@ export const Shop: React.FC = () => {
 
     const activeFilterCount = selectedColors.length + selectedSizes.length + selectedTags.length + selectedSpecials.length + (priceRange[0] > MIN_PRICE || priceRange[1] < MAX_PRICE ? 1 : 0);
 
-    // --- Recursive Sidebar Component ---
     const CategoryFilterTree: React.FC<{ node: CategoryNode, level?: number }> = ({ node, level = 0 }) => {
         const isSelected = selectedCategory === node.fullPath;
         const hasChildren = node.children.length > 0;
@@ -376,7 +419,7 @@ export const Shop: React.FC = () => {
                             {searchParam ? `Results for "${searchParam}"` : (selectedCategory === 'All' ? 'All Products' : selectedCategory.split(CATEGORY_SEPARATOR).pop())}
                         </h1>
                         <p className="text-gray-500 text-sm mt-1">
-                            {loading ? 'Loading...' : `${filteredProducts.length} items`}
+                            {loading ? 'Loading...' : `${filteredProducts.filter(p => !(p as any)._loading).length} items`}
                         </p>
                     </div>
 
@@ -388,29 +431,10 @@ export const Shop: React.FC = () => {
                             <SlidersHorizontal className="h-4 w-4" /> Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
                         </button>
                         
-                        {/* Grid Toggle (Desktop Only) */}
                         <div className="hidden lg:flex items-center gap-1 border-r border-gray-200 pr-4 mr-2">
-                            <button 
-                                onClick={() => setGridMode('cozy')} 
-                                className={`p-2 rounded hover:bg-gray-100 transition-colors ${gridMode === 'cozy' ? 'text-black' : 'text-gray-400'}`}
-                                title="Cozy Grid"
-                            >
-                                <LayoutGrid className="h-5 w-5" />
-                            </button>
-                            <button 
-                                onClick={() => setGridMode('compact')} 
-                                className={`p-2 rounded hover:bg-gray-100 transition-colors ${gridMode === 'compact' ? 'text-black' : 'text-gray-400'}`}
-                                title="Compact Grid"
-                            >
-                                <Grid3x3 className="h-5 w-5" />
-                            </button>
-                            <button 
-                                onClick={() => setGridMode('list')} 
-                                className={`p-2 rounded hover:bg-gray-100 transition-colors ${gridMode === 'list' ? 'text-black' : 'text-gray-400'}`}
-                                title="List View"
-                            >
-                                <List className="h-5 w-5" />
-                            </button>
+                            <button onClick={() => setGridMode('cozy')} className={`p-2 rounded hover:bg-gray-100 transition-colors ${gridMode === 'cozy' ? 'text-black' : 'text-gray-400'}`}><LayoutGrid className="h-5 w-5" /></button>
+                            <button onClick={() => setGridMode('compact')} className={`p-2 rounded hover:bg-gray-100 transition-colors ${gridMode === 'compact' ? 'text-black' : 'text-gray-400'}`}><Grid3x3 className="h-5 w-5" /></button>
+                            <button onClick={() => setGridMode('list')} className={`p-2 rounded hover:bg-gray-100 transition-colors ${gridMode === 'list' ? 'text-black' : 'text-gray-400'}`}><List className="h-5 w-5" /></button>
                         </div>
 
                         <div className="relative flex-1 md:w-48">
@@ -441,64 +465,33 @@ export const Shop: React.FC = () => {
 
                         {searchParam && (
                             <div className="mb-6 border-b border-gray-100 pb-4">
-                                <button 
-                                    onClick={() => {
-                                        const newParams = new URLSearchParams(searchParams);
-                                        newParams.delete('search');
-                                        setSearchParams(newParams);
-                                    }}
-                                    className="text-xs text-gray-500 hover:text-black underline flex items-center gap-1 font-medium"
-                                >
-                                    <X className="h-3 w-3" /> Clear search: "{searchParam}"
-                                </button>
+                                <button onClick={() => { const newParams = new URLSearchParams(searchParams); newParams.delete('search'); setSearchParams(newParams); }} className="text-xs text-gray-500 hover:text-black underline flex items-center gap-1 font-medium"><X className="h-3 w-3" /> Clear search: "{searchParam}"</button>
                             </div>
                         )}
 
                         {activeFilterCount > 0 && (
                             <div className="mb-6">
-                                <button onClick={clearFilters} className="text-xs text-red-600 underline font-bold uppercase flex items-center gap-1">
-                                    <Trash2 className="h-3 w-3" /> Clear All Filters
-                                </button>
+                                <button onClick={clearFilters} className="text-xs text-red-600 underline font-bold uppercase flex items-center gap-1"><Trash2 className="h-3 w-3" /> Clear All Filters</button>
                             </div>
                         )}
 
                         <div className="space-y-8">
-                            {/* Categories Tree */}
                             <div>
                                 <h3 className="font-bold text-sm uppercase mb-3">Category</h3>
                                 <div className="space-y-1">
-                                    <button 
-                                        onClick={() => { 
-                                            setSelectedCategory('All'); 
-                                            setSearchParams({});
-                                            setIsFilterOpen(false);
-                                        }}
-                                        className={`w-full text-left py-1.5 px-2 rounded-md text-sm ${selectedCategory === 'All' ? 'bg-black text-white font-bold' : 'text-gray-600 hover:bg-gray-100'}`}
-                                    >
-                                        All Products
-                                    </button>
-                                    {categoryTree.map(node => (
-                                        <CategoryFilterTree key={node.fullPath} node={node} />
-                                    ))}
+                                    <button onClick={() => { setSelectedCategory('All'); setSearchParams({}); setIsFilterOpen(false); }} className={`w-full text-left py-1.5 px-2 rounded-md text-sm ${selectedCategory === 'All' ? 'bg-black text-white font-bold' : 'text-gray-600 hover:bg-gray-100'}`}>All Products</button>
+                                    {categoryTree.map(node => <CategoryFilterTree key={node.fullPath} node={node} />)}
                                 </div>
                             </div>
 
-                            {/* Specials / Marketing Filters - Dynamic & Alphabetical */}
                             {availableSpecials.length > 0 && (
                                 <div>
                                     <h3 className="font-bold text-sm uppercase mb-3">Special Offers</h3>
                                     <div className="space-y-2">
                                         {availableSpecials.map(option => (
                                             <label key={option} className="flex items-center gap-2 cursor-pointer group">
-                                                <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${selectedSpecials.includes(option) ? 'bg-black border-black text-white' : 'border-gray-300 bg-white group-hover:border-gray-400'}`}>
-                                                    {selectedSpecials.includes(option) && <Check className="h-3 w-3" />}
-                                                </div>
-                                                <input 
-                                                    type="checkbox" 
-                                                    className="hidden" 
-                                                    checked={selectedSpecials.includes(option)}
-                                                    onChange={() => toggleFilter(setSelectedSpecials, option)}
-                                                />
+                                                <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${selectedSpecials.includes(option) ? 'bg-black border-black text-white' : 'border-gray-300 bg-white group-hover:border-gray-400'}`}>{selectedSpecials.includes(option) && <Check className="h-3 w-3" />}</div>
+                                                <input type="checkbox" className="hidden" checked={selectedSpecials.includes(option)} onChange={() => toggleFilter(setSelectedSpecials, option)} />
                                                 <span className={`text-sm ${selectedSpecials.includes(option) ? 'font-bold text-black' : 'text-gray-600 group-hover:text-black'}`}>{option}</span>
                                             </label>
                                         ))}
@@ -506,202 +499,83 @@ export const Shop: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Price Slider */}
                             <div>
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="font-bold text-sm uppercase">Price Range</h3>
-                                    {(priceRange[0] > MIN_PRICE || priceRange[1] < MAX_PRICE) && (
-                                        <button 
-                                            onClick={() => setPriceRange([MIN_PRICE, MAX_PRICE])}
-                                            className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase"
-                                        >
-                                            Reset
-                                        </button>
-                                    )}
+                                    {(priceRange[0] > MIN_PRICE || priceRange[1] < MAX_PRICE) && <button onClick={() => setPriceRange([MIN_PRICE, MAX_PRICE])} className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase">Reset</button>}
                                 </div>
                                 <div className="relative h-10 mb-2 select-none">
                                     <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-200 rounded-full -translate-y-1/2"></div>
-                                    <div 
-                                        className="absolute top-1/2 h-1 bg-black rounded-full -translate-y-1/2 pointer-events-none"
-                                        style={{ 
-                                            left: `${(priceRange[0] / MAX_PRICE) * 100}%`, 
-                                            right: `${100 - (priceRange[1] / MAX_PRICE) * 100}%` 
-                                        }}
-                                    ></div>
-                                    <input 
-                                        type="range" 
-                                        min={MIN_PRICE} 
-                                        max={MAX_PRICE} 
-                                        value={priceRange[0]} 
-                                        onChange={handleMinPriceChange}
-                                        className="absolute top-1/2 -translate-y-1/2 w-full h-1 appearance-none bg-transparent pointer-events-none z-10 p-0 m-0"
-                                    />
-                                    <input 
-                                        type="range" 
-                                        min={MIN_PRICE} 
-                                        max={MAX_PRICE} 
-                                        value={priceRange[1]} 
-                                        onChange={handleMaxPriceChange}
-                                        className="absolute top-1/2 -translate-y-1/2 w-full h-1 appearance-none bg-transparent pointer-events-none z-20 p-0 m-0"
-                                    />
+                                    <div className="absolute top-1/2 h-1 bg-black rounded-full -translate-y-1/2 pointer-events-none" style={{ left: `${(priceRange[0] / MAX_PRICE) * 100}%`, right: `${100 - (priceRange[1] / MAX_PRICE) * 100}%` }}></div>
+                                    <input type="range" min={MIN_PRICE} max={MAX_PRICE} value={priceRange[0]} onChange={handleMinPriceChange} className="absolute top-1/2 -translate-y-1/2 w-full h-1 appearance-none bg-transparent pointer-events-none z-10 p-0 m-0" />
+                                    <input type="range" min={MIN_PRICE} max={MAX_PRICE} value={priceRange[1]} onChange={handleMaxPriceChange} className="absolute top-1/2 -translate-y-1/2 w-full h-1 appearance-none bg-transparent pointer-events-none z-20 p-0 m-0" />
                                 </div>
                                 <div className="flex justify-between items-center text-xs font-bold text-gray-900">
-                                    {editingMin ? (
-                                        <div className="flex items-center">
-                                            <span className="mr-1">$</span>
-                                            <input 
-                                                ref={minInputRef}
-                                                type="number" 
-                                                className="w-12 border border-gray-300 rounded p-1 text-xs" 
-                                                defaultValue={priceRange[0]}
-                                                onBlur={(e) => handleManualPriceSubmit('min', e.target.value)}
-                                                onKeyDown={(e) => { if(e.key === 'Enter') handleManualPriceSubmit('min', e.currentTarget.value) }}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => setEditingMin(true)} className="hover:bg-gray-100 px-1 py-0.5 rounded cursor-text">
-                                            ${priceRange[0]}
-                                        </button>
-                                    )}
-
-                                    {editingMax ? (
-                                        <div className="flex items-center">
-                                            <span className="mr-1">$</span>
-                                            <input 
-                                                ref={maxInputRef}
-                                                type="number" 
-                                                className="w-12 border border-gray-300 rounded p-1 text-xs" 
-                                                defaultValue={priceRange[1]}
-                                                onBlur={(e) => handleManualPriceSubmit('max', e.target.value)}
-                                                onKeyDown={(e) => { if(e.key === 'Enter') handleManualPriceSubmit('max', e.currentTarget.value) }}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => setEditingMax(true)} className="hover:bg-gray-100 px-1 py-0.5 rounded cursor-text">
-                                            ${priceRange[1]}
-                                        </button>
-                                    )}
+                                    {editingMin ? <div className="flex items-center"><span className="mr-1">$</span><input ref={minInputRef} type="number" className="w-12 border border-gray-300 rounded p-1 text-xs" defaultValue={priceRange[0]} onBlur={(e) => handleManualPriceSubmit('min', e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') handleManualPriceSubmit('min', e.currentTarget.value) }} /></div> : <button onClick={() => setEditingMin(true)} className="hover:bg-gray-100 px-1 py-0.5 rounded cursor-text">${priceRange[0]}</button>}
+                                    {editingMax ? <div className="flex items-center"><span className="mr-1">$</span><input ref={maxInputRef} type="number" className="w-12 border border-gray-300 rounded p-1 text-xs" defaultValue={priceRange[1]} onBlur={(e) => handleManualPriceSubmit('max', e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') handleManualPriceSubmit('max', e.currentTarget.value) }} /></div> : <button onClick={() => setEditingMax(true)} className="hover:bg-gray-100 px-1 py-0.5 rounded cursor-text">${priceRange[1]}</button>}
                                 </div>
                             </div>
 
-                            {/* Colors */}
                             {uniqueColors.length > 0 && (
                                 <div>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="font-bold text-sm uppercase">Color</h3>
-                                        {selectedColors.length > 0 && (
-                                            <button onClick={() => setSelectedColors([])} className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase">Clear</button>
-                                        )}
-                                    </div>
+                                    <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-sm uppercase">Color</h3>{selectedColors.length > 0 && <button onClick={() => setSelectedColors([])} className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase">Clear</button>}</div>
                                     <div className="flex flex-wrap gap-2">
                                         {uniqueColors.map(color => (
-                                            <button 
-                                                key={color}
-                                                onClick={() => toggleFilter(setSelectedColors, color)}
-                                                className={`w-6 h-6 rounded-full border shadow-sm ${selectedColors.includes(color) ? 'ring-2 ring-offset-2 ring-black' : 'hover:scale-110'} transition-all`}
-                                                style={{ backgroundColor: color.toLowerCase() }}
-                                                title={color}
-                                            />
+                                            <button key={color} onClick={() => toggleFilter(setSelectedColors, color)} className={`w-6 h-6 rounded-full border shadow-sm ${selectedColors.includes(color) ? 'ring-2 ring-offset-2 ring-black' : 'hover:scale-110'} transition-all`} style={{ backgroundColor: color.toLowerCase() }} title={color} />
                                         ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Sizes */}
                             {uniqueSizes.length > 0 && (
                                 <div>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="font-bold text-sm uppercase">Size</h3>
-                                        {selectedSizes.length > 0 && (
-                                            <button onClick={() => setSelectedSizes([])} className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase">Clear</button>
-                                        )}
-                                    </div>
+                                    <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-sm uppercase">Size</h3>{selectedSizes.length > 0 && <button onClick={() => setSelectedSizes([])} className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase">Clear</button>}</div>
                                     <div className="flex flex-wrap gap-2">
                                         {uniqueSizes.map(size => (
-                                            <button 
-                                                key={size}
-                                                onClick={() => toggleFilter(setSelectedSizes, size)}
-                                                className={`px-3 py-1 text-xs border rounded ${selectedSizes.includes(size) ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'}`}
-                                            >
-                                                {size}
-                                            </button>
+                                            <button key={size} onClick={() => toggleFilter(setSelectedSizes, size)} className={`px-3 py-1 text-xs border rounded ${selectedSizes.includes(size) ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'}`}>{size}</button>
                                         ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Tags */}
                             {uniqueTags.length > 0 && (
                                 <div>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="font-bold text-sm uppercase">Tags</h3>
-                                        {selectedTags.length > 0 && (
-                                            <button onClick={() => setSelectedTags([])} className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase">Clear</button>
-                                        )}
-                                    </div>
-                                    <div className="relative mb-3">
-                                        <Search className="absolute left-2 top-2 h-3 w-3 text-gray-400" />
-                                        <input 
-                                            type="text" 
-                                            placeholder="Search tags..." 
-                                            value={tagSearch}
-                                            onChange={(e) => setTagSearch(e.target.value)}
-                                            className="w-full border border-gray-200 rounded px-2 pl-7 py-1 text-xs focus:outline-none focus:border-black"
-                                        />
-                                    </div>
-                                    {selectedTags.length > 0 && (
-                                        <div className="flex flex-wrap gap-2 mb-3">
-                                            {selectedTags.map(tag => (
-                                                <button 
-                                                    key={tag}
-                                                    onClick={() => toggleFilter(setSelectedTags, tag)}
-                                                    className="px-2 py-1 text-[10px] uppercase font-bold rounded bg-black text-white flex items-center gap-1 hover:bg-gray-800 transition-colors shadow-sm"
-                                                >
-                                                    {tag} <X className="h-3 w-3" />
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
+                                    <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-sm uppercase">Tags</h3>{selectedTags.length > 0 && <button onClick={() => setSelectedTags([])} className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase">Clear</button>}</div>
+                                    <div className="relative mb-3"><Search className="absolute left-2 top-2 h-3 w-3 text-gray-400" /><input type="text" placeholder="Search tags..." value={tagSearch} onChange={(e) => setTagSearch(e.target.value)} className="w-full border border-gray-200 rounded px-2 pl-7 py-1 text-xs focus:outline-none focus:border-black" /></div>
+                                    {selectedTags.length > 0 && (<div className="flex flex-wrap gap-2 mb-3">{selectedTags.map(tag => (<button key={tag} onClick={() => toggleFilter(setSelectedTags, tag)} className="px-2 py-1 text-[10px] uppercase font-bold rounded bg-black text-white flex items-center gap-1 hover:bg-gray-800 transition-colors shadow-sm">{tag} <X className="h-3 w-3" /></button>))}</div>)}
                                     <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-2">
-                                        {displayedTags.filter(t => !selectedTags.includes(t)).length > 0 ? 
-                                            displayedTags.filter(t => !selectedTags.includes(t)).map(tag => (
-                                            <button 
-                                                key={tag}
-                                                onClick={() => toggleFilter(setSelectedTags, tag)}
-                                                className="px-2 py-1 text-[10px] uppercase font-bold rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                            >
-                                                {tag}
-                                            </button>
-                                        )) : (
-                                            <span className="text-xs text-gray-400">No other tags match</span>
-                                        )}
+                                        {displayedTags.filter(t => !selectedTags.includes(t)).length > 0 ? displayedTags.filter(t => !selectedTags.includes(t)).map(tag => (
+                                            <button key={tag} onClick={() => toggleFilter(setSelectedTags, tag)} className="px-2 py-1 text-[10px] uppercase font-bold rounded bg-gray-100 text-gray-600 hover:bg-gray-200">{tag}</button>
+                                        )) : <span className="text-xs text-gray-400">No other tags match</span>}
                                     </div>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Backdrop for Mobile Sidebar */}
                     {isFilterOpen && <div className="fixed inset-0 bg-black/50 z-50 lg:hidden" onClick={() => setIsFilterOpen(false)} />}
 
-                    {/* Product Grid */}
                     <div className="flex-1">
-                        {loading ? (
+                        {loading && allProducts.length === 0 ? (
                             <div className={`grid gap-y-8 gap-x-6 animate-pulse ${gridMode === 'cozy' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : gridMode === 'list' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'}`}>
-                                {[1,2,3,4,5,6].map(i => (
-                                    <div key={i} className={`bg-gray-100 rounded-lg ${gridMode === 'list' ? 'h-48' : 'aspect-square'}`}></div>
-                                ))}
+                                {[1,2,3,4,5,6].map(i => <div key={i} className={`bg-gray-100 rounded-lg ${gridMode === 'list' ? 'h-48' : 'aspect-square'}`}></div>)}
                             </div>
                         ) : filteredProducts.length > 0 ? (
                             <div className={`grid gap-y-10 gap-x-6 ${gridMode === 'cozy' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : gridMode === 'list' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'}`}>
-                                {filteredProducts.map(product => (
-                                    <ProductCard 
-                                        key={product.id} 
-                                        product={product} 
-                                        onClick={setSelectedProduct} 
-                                        viewMode={gridMode}
-                                    />
-                                ))}
+                                {filteredProducts.map(product => {
+                                    // Skeletons from progressive load state
+                                    if ((product as any)._loading) {
+                                        return <div key={product.id} className={`bg-gray-100 rounded-lg animate-pulse ${gridMode === 'list' ? 'h-48' : 'aspect-square'}`}></div>;
+                                    }
+                                    return (
+                                        <ProductCard 
+                                            key={product.id} 
+                                            product={product} 
+                                            onClick={setSelectedProduct} 
+                                            viewMode={gridMode}
+                                        />
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="py-20 text-center bg-gray-50 border border-dashed rounded-lg">

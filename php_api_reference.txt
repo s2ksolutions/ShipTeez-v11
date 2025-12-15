@@ -1212,7 +1212,13 @@ if (($method === 'POST' || $method === 'GET') && $path === '/auth/callback') {
 
     // --- PRODUCT ROUTES ---
     if ($method === 'GET' && $path === '/products') {
-        $stmt = $db->query("SELECT * FROM products");
+        // Mode: IDs only (fast) - Ensure ORDER BY to prevent random popping on frontend
+        if (isset($_GET['mode']) && $_GET['mode'] === 'ids') {
+            $stmt = $db->query("SELECT id FROM products ORDER BY createdAt DESC");
+            jsonResponse($stmt->fetchAll(PDO::FETCH_COLUMN));
+        }
+
+        $stmt = $db->query("SELECT * FROM products ORDER BY createdAt DESC");
         $products = $stmt->fetchAll();
         $mapped = array_map(function($p) {
             $data = json_decode($p['data'], true);
@@ -1220,6 +1226,23 @@ if (($method === 'POST' || $method === 'GET') && $path === '/auth/callback') {
             return array_merge($p, $data);
         }, $products);
         jsonResponse($mapped);
+    }
+
+    // Single Product Detail
+    if ($method === 'GET' && preg_match('/^\/products\/(.+)$/', $path, $matches)) {
+        $id = $matches[1];
+        // Allow fetching by ID or Slug
+        $stmt = $db->prepare("SELECT * FROM products WHERE id = ? OR slug = ?");
+        $stmt->execute([$id, $id]);
+        $product = $stmt->fetch();
+        
+        if ($product) {
+            $data = json_decode($product['data'], true);
+            unset($product['data']);
+            jsonResponse(array_merge($product, $data));
+        } else {
+            jsonResponse(['error' => 'Not found'], 404);
+        }
     }
 
     if ($method === 'GET' && $path === '/products/categories') {
