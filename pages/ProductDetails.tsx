@@ -133,17 +133,38 @@ export const ProductDetails: React.FC = () => {
                 if(found.sizes && found.sizes.length) setSelectedSize(found.sizes[1] || found.sizes[0]);
                 if(found.colors && found.colors.length) setSelectedColor(found.colors[0]);
 
-                // Load Related Products (Async separately to show main product fast)
+                // Load Related Products with Relevance Scoring
                 db.getAllProducts().then(all => {
-                    const related = all.filter(p => 
-                        p.id !== found.id && 
-                        !p.isHidden && // Ensure hidden products don't show up in related
-                        (
-                            p.category === found.category || 
-                            p.tags.some(t => found.tags.includes(t))
-                        )
-                    ).slice(0, 4);
-                    setRelatedProducts(related);
+                    const sourceTags = found.tags.map(t => t.toLowerCase());
+                    
+                    const scoredProducts = all
+                        .filter(p => p.id !== found.id && !p.isHidden)
+                        .map(p => {
+                            let score = 0;
+                            // High Weight: Matching Tags (Cross-category relevance)
+                            if (p.tags) {
+                                const matchingTags = p.tags.filter(t => sourceTags.includes(t.toLowerCase()));
+                                score += matchingTags.length * 10;
+                            }
+                            
+                            // Low Weight: Same Category (Fallback if no tags match)
+                            if (p.category === found.category) {
+                                score += 1;
+                            }
+
+                            return { product: p, score };
+                        });
+
+                    // Sort by Score Descending
+                    scoredProducts.sort((a, b) => b.score - a.score);
+
+                    // Take top 4, ensure they have at least some relevance (score > 0)
+                    const topRelated = scoredProducts
+                        .filter(item => item.score > 0)
+                        .slice(0, 4)
+                        .map(item => item.product);
+
+                    setRelatedProducts(topRelated);
                 });
 
                 // Log View Event
