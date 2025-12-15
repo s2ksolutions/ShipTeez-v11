@@ -48,6 +48,15 @@ export const Footer: React.FC = () => {
         }
     };
 
+    const handleMyAccount = (e: React.MouseEvent) => {
+        e.preventDefault();
+        if (user) {
+            navigate('/account');
+        } else {
+            setLoginModalOpen(true);
+        }
+    };
+
     const socials = content?.socials || {};
     const footerConfig = content?.footer || {
         brandDescription: 'Curated, AI-designed merchandise.',
@@ -131,7 +140,11 @@ export const Footer: React.FC = () => {
                                     Track Order
                                 </button>
                             </li>
-                            <li><Link to="/account" className="hover:text-white transition-colors">My Account</Link></li>
+                            <li>
+                                <button onClick={handleMyAccount} className="hover:text-white transition-colors text-left">
+                                    My Account
+                                </button>
+                            </li>
                             {content?.policies.map(policy => (
                                 <li key={policy.id}><Link to={`/pages/${policy.slug}`} className="hover:text-white transition-colors">{policy.title}</Link></li>
                             ))}
