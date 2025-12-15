@@ -1,10 +1,9 @@
-import React, { useEffect } from 'react';
+
+import React, { useEffect, Suspense } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Shop } from './pages/Shop';
 import { ProductDetails } from './pages/ProductDetails';
-import { Admin } from './pages/Admin';
-import { CustomerServicePanel } from './pages/CustomerServicePanel';
 import { OrderStatus } from './pages/OrderStatus';
 import { Account } from './pages/Account';
 import { Login } from './pages/Login';
@@ -24,6 +23,11 @@ import { Footer } from './components/Footer';
 import { MarketingPopup } from './components/MarketingPopup';
 import { Toast } from './components/Toast';
 import { ScrollToTop } from './components/ScrollToTop';
+import { Loader2 } from 'lucide-react';
+
+// Lazy Load Admin Modules to create separate bundles
+const Admin = React.lazy(() => import('./pages/Admin').then(module => ({ default: module.Admin })));
+const CustomerServicePanel = React.lazy(() => import('./pages/CustomerServicePanel').then(module => ({ default: module.CustomerServicePanel })));
 
 const ThemeInjector: React.FC = () => {
     const { content } = useStore();
@@ -139,6 +143,15 @@ const ThemeInjector: React.FC = () => {
     );
 };
 
+const LoadingFallback = () => (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <p className="text-sm font-medium text-gray-500">Loading module...</p>
+        </div>
+    </div>
+);
+
 const AppContent: React.FC = () => {
   return (
       <HashRouter>
@@ -153,8 +166,16 @@ const AppContent: React.FC = () => {
             <Routes>
               <Route path="/" element={<Shop />} />
               <Route path="/product/:id" element={<ProductDetails />} />
-              <Route path="/admin" element={<Admin />} />
-              <Route path="/cs-panel" element={<CustomerServicePanel />} />
+              <Route path="/admin" element={
+                  <Suspense fallback={<LoadingFallback />}>
+                      <Admin />
+                  </Suspense>
+              } />
+              <Route path="/cs-panel" element={
+                  <Suspense fallback={<LoadingFallback />}>
+                      <CustomerServicePanel />
+                  </Suspense>
+              } />
               <Route path="/track-order" element={<OrderStatus />} />
               <Route path="/account" element={<Account />} />
               <Route path="/login" element={<Login />} />
