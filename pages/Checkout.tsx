@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useStore } from '../context/StoreProvider';
 import { useNavigate, Link } from 'react-router-dom';
@@ -576,7 +577,7 @@ const CheckoutForm: React.FC = () => {
                 
                 // ✅ Extract REAL wallet shipping/billing data
                 const shipping = paymentIntent.shipping || {};
-                const billing = paymentIntent.billing_details || {};
+                const billing = (paymentIntent as any).billing_details || {};
                 
                 // Finalize on backend to record the order (verify amount again)
                 const processRes = await api.processPayment(

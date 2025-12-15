@@ -1,4 +1,5 @@
 
+// ... existing imports ...
 import { 
     Product, Order, StoreContent, User, SupportTicket, 
     PromoCode, Subscriber, Unsubscriber, AnalyticsEvent, 
@@ -8,6 +9,7 @@ import { settingsService } from './settings';
 import { api, API_ENDPOINTS } from './api';
 import { securityService } from './security';
 
+// ... existing helpers ...
 let allProductsCache: Product[] | null = null;
 let allProductsTimestamp = 0;
 const CACHE_TTL = 5 * 60 * 1000;
@@ -213,7 +215,9 @@ export const db = {
     },
 
     deleteUser: async (id: string) => {
-        // Not implemented in API yet
+        const s = await settingsService.load();
+        const token = await getToken();
+        return api.deleteUser(s, id, token);
     },
 
     getWallet: async () => {

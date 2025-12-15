@@ -36,6 +36,7 @@ export const API_ENDPOINTS = {
     users: {
         list: '/users',
         update: (id: string) => `/users/${id}`,
+        delete: (id: string) => `/users/${id}`,
         suspend: (id: string) => `/users/${id}/suspend`,
         detail: (id: string) => `/users/${id}`,
         wallet: '/users/wallet', // GET list, DELETE /:id
@@ -203,6 +204,11 @@ export const api = {
             body: JSON.stringify(payload)
         }, token);
     },
+
+    deleteUser: (settings: AppSettings, id: string, token?: string) => 
+        request<void>(settings, API_ENDPOINTS.users.delete(id), {
+            method: 'DELETE'
+        }, token),
 
     suspendUser: (settings: AppSettings, id: string, isSuspended: boolean, reason: string, token?: string) => 
         request<void>(settings, API_ENDPOINTS.users.suspend(id), {

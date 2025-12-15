@@ -1,5 +1,5 @@
 
-// ... imports ...
+// ... existing imports ...
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useStore } from '../context/StoreProvider';
 import { SEO } from '../components/SEO';
@@ -13,8 +13,9 @@ import { Breadcrumbs } from '../components/Breadcrumbs';
 import { SuspensionAppeal } from '../components/SuspensionAppeal';
 import { toBase64, decodeHtml } from '../utils';
 
-// --- Chat Message Renderer ---
+// ... ChatMessageRenderer ...
 const ChatMessageRenderer: React.FC<{ text: string; variant?: 'user' | 'admin' }> = ({ text, variant = 'user' }) => {
+    // ... existing ChatMessageRenderer implementation ...
     const navigate = useNavigate();
 
     const linkClasses = variant === 'admin'
@@ -73,7 +74,7 @@ const ChatMessageRenderer: React.FC<{ text: string; variant?: 'user' | 'admin' }
     return <>{nodes}</>;
 };
 
-// --- Helper for Ticket Preview ---
+// ... generatePreviewText ...
 const generatePreviewText = (message: TicketMessage | undefined): string => {
     if (!message) return 'No messages';
     if (message.attachments?.length) return '[Attachment]';
@@ -89,8 +90,7 @@ const generatePreviewText = (message: TicketMessage | undefined): string => {
     return decodeHtml(message.text);
 };
 
-
-// --- Skeleton Component ---
+// ... TabSkeleton ...
 const TabSkeleton = () => (
     <div className="space-y-4 animate-pulse">
         <div className="h-8 bg-gray-200 rounded w-1/3 mb-6"></div>
@@ -107,8 +107,7 @@ const TabSkeleton = () => (
     </div>
 );
 
-// --- Sub-Components (Moved outside main component to prevent re-creation on render) ---
-
+// ... NavButton ...
 type NavButtonId = 'orders' | 'support' | 'settings' | 'addresses' | 'wallet';
 
 const NavButton = ({ id, label, icon: Icon, active, onClick }: { id: NavButtonId, label: string, icon: any, active: boolean, onClick: (id: NavButtonId) => void }) => (
@@ -123,6 +122,7 @@ const NavButton = ({ id, label, icon: Icon, active, onClick }: { id: NavButtonId
     </button>
 );
 
+// ... PasswordField ...
 const PasswordField: React.FC<{ name: string; label: string; value: string; show: boolean; onToggle: () => void; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; error?: string; icon: any }> = ({ name, label, value, show, onToggle, onChange, error, icon: Icon }) => (
     <div className="space-y-1.5">
         <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">{label}</label>
@@ -150,7 +150,6 @@ const PasswordField: React.FC<{ name: string; label: string; value: string; show
         {error && <p className="text-xs text-red-600 mt-1 font-medium">{error}</p>}
     </div>
 );
-
 
 export const Account: React.FC = () => {
     const { user, logout, content, updateUserAddresses, refreshUnreadMessages, showToast } = useStore();
@@ -198,6 +197,8 @@ export const Account: React.FC = () => {
     // Wallet
     const [savedCards, setSavedCards] = useState<any[]>([]);
     const [isLoadingWallet, setIsLoadingWallet] = useState(false);
+    const [cardToDelete, setCardToDelete] = useState<string | null>(null);
+    const [isDeletingCard, setIsDeletingCard] = useState(false);
 
     // Settings
     const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
@@ -206,6 +207,8 @@ export const Account: React.FC = () => {
     const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
     const [passwordUpdateError, setPasswordUpdateError] = useState('');
     const [passwordUpdateSuccess, setPasswordUpdateSuccess] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Address
     const [isAddingAddress, setIsAddingAddress] = useState(false);
@@ -215,6 +218,7 @@ export const Account: React.FC = () => {
     });
 
     // --- Effects ---
+    // ... (existing effects unchanged) ...
     useEffect(() => {
         if (activeTab === 'support' && supportContainerRef.current) {
             if (sidebarWidth === 0) setSidebarWidth(supportContainerRef.current.offsetWidth * 0.5);
@@ -283,6 +287,7 @@ export const Account: React.FC = () => {
     }, [orders, orderSearch, orderFilter]);
 
     // --- Loaders ---
+    // ... (loaders unchanged) ...
     const loadOrders = async () => {
         setIsLoadingOrders(true);
         try {
@@ -325,12 +330,23 @@ export const Account: React.FC = () => {
     };
 
     // --- Actions ---
-    const handleDeleteCard = async (id: string) => {
-        if(!confirm("Remove this card from your wallet?")) return;
+    const handleDeleteCard = (id: string) => {
+        setCardToDelete(id);
+    };
+
+    const performDeleteCard = async () => {
+        if (!cardToDelete) return;
+        setIsDeletingCard(true);
         try {
-            await db.deletePaymentMethod(id);
-            setSavedCards(prev => prev.filter(c => c.id !== id));
-        } catch(e) { alert("Failed to remove card"); }
+            await db.deletePaymentMethod(cardToDelete);
+            setSavedCards(prev => prev.filter(c => c.id !== cardToDelete));
+            showToast("Card removed successfully.");
+        } catch(e) {
+            showToast("Failed to remove card.", "error");
+        } finally {
+            setIsDeletingCard(false);
+            setCardToDelete(null);
+        }
     };
 
     const handleChangePassword = async (e: React.FormEvent) => {
@@ -372,9 +388,21 @@ export const Account: React.FC = () => {
     };
 
     const handleDeleteAccount = () => {
-        if(window.confirm("Are you sure? This action is permanent and cannot be undone.")) {
-            showToast("Account scheduled for deletion.", "success");
+        setShowDeleteConfirm(true);
+    };
+
+    const performDeleteAccount = async () => {
+        if (!user) return;
+        setIsDeleting(true);
+        try {
+            await db.deleteUser(user.id);
             logout();
+            navigate('/');
+            showToast("Account deleted successfully.");
+        } catch (e) {
+            showToast("Failed to delete account.", "error");
+            setIsDeleting(false);
+            setShowDeleteConfirm(false);
         }
     };
 
@@ -552,6 +580,8 @@ export const Account: React.FC = () => {
              {selectedTracking && <TrackingModal order={selectedTracking} onClose={() => setSelectedTracking(null)} />}
              {previewImage && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4" onClick={() => setPreviewImage(null)}><button className="absolute top-4 right-4 text-white hover:text-gray-300"><X className="h-8 w-8"/></button><img src={previewImage} className="max-w-full max-h-full object-contain rounded" onClick={e => e.stopPropagation()} /></div>)}
              {showCloseConfirm && (<div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/25 backdrop-blur-sm animate-in fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full animate-in zoom-in-95"><h3 className="font-bold text-lg mb-2">Close Ticket?</h3><p className="text-gray-600 text-sm mb-6">This will move the ticket to the archive. You can reopen it anytime by sending a new reply.</p><div className="flex justify-end gap-3"><button onClick={() => setShowCloseConfirm(false)} className="px-4 py-2 border rounded-lg text-sm font-bold hover:bg-gray-50">Cancel</button><button onClick={handleCloseTicketConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700">Close Ticket</button></div></div></div>)}
+             {showDeleteConfirm && (<div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/25 backdrop-blur-sm animate-in fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full animate-in zoom-in-95"><h3 className="font-bold text-lg mb-2 text-red-600 flex items-center gap-2"><AlertTriangle className="h-5 w-5"/> Delete Account?</h3><p className="text-gray-600 text-sm mb-6">This action is permanent. All your order history and data will be removed immediately.</p><div className="flex justify-end gap-3"><button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 border rounded-lg text-sm font-bold hover:bg-gray-50">Cancel</button><button onClick={performDeleteAccount} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700">{isDeleting ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Yes, Delete'}</button></div></div></div>)}
+             {cardToDelete && (<div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/25 backdrop-blur-sm animate-in fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full animate-in zoom-in-95"><h3 className="font-bold text-lg mb-2">Remove Card?</h3><p className="text-gray-600 text-sm mb-6">Are you sure you want to remove this payment method?</p><div className="flex justify-end gap-3"><button onClick={() => setCardToDelete(null)} className="px-4 py-2 border rounded-lg text-sm font-bold hover:bg-gray-50">Cancel</button><button onClick={performDeleteCard} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700">{isDeletingCard ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Remove'}</button></div></div></div>)}
              {hoveredImage && (
                 <div 
                     className="fixed z-[110] bg-white p-2 shadow-2xl border border-gray-200 rounded-lg pointer-events-none animate-in fade-in zoom-in-95 duration-150"
@@ -587,7 +617,7 @@ export const Account: React.FC = () => {
 
                      <div className="lg:col-span-9">
                          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                             
+                             {/* ... Orders Tab ... */}
                              {activeTab === 'orders' && (
                                  <div className="space-y-6">
                                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4"><h2 className="text-xl font-bold font-display text-gray-900">Order History</h2></div>
@@ -607,7 +637,9 @@ export const Account: React.FC = () => {
                                  </div>
                              )}
 
+                             {/* ... Support Tab ... */}
                              {activeTab === 'support' && (
+// ... (keep Support Tab Content) ...
                                  <div className="bg-white border border-gray-200 rounded-2xl shadow-sm h-[600px] flex flex-col md:flex-row overflow-hidden relative select-none" ref={supportContainerRef}>
                                      {/* Inbox */}
                                      <div className={`flex flex-col border-r border-gray-100 transition-none relative shrink-0 ${isInboxFullWidth ? 'w-full' : ((activeTicket || isCreatingTicket) ? 'hidden md:flex' : 'w-full')}`} style={{ width: (!isInboxFullWidth && (activeTicket || isCreatingTicket)) ? sidebarWidth : '100%' }}>
@@ -690,6 +722,7 @@ export const Account: React.FC = () => {
                                  </div>
                              )}
 
+                             {/* ... Wallet Tab ... */}
                              {activeTab === 'wallet' && (
                                 <div className="space-y-6">
                                     <h2 className="text-xl font-bold font-display text-gray-900">Wallet & Payment Methods</h2>
@@ -701,7 +734,9 @@ export const Account: React.FC = () => {
                                 </div>
                              )}
 
+                             {/* ... Addresses Tab ... */}
                              {activeTab === 'addresses' && (
+// ... (keep Addresses Tab Content) ...
                                 <div className="space-y-6">
                                     <div className="flex items-center justify-between"><h2 className="text-xl font-bold font-display text-gray-900">Saved Addresses</h2><button onClick={() => { setIsAddingAddress(!isAddingAddress); setEditingAddressId(null); setNewAddress({ name: '', street: '', line2: '', city: '', state: '', zip: '', isDefaultShipping: false, isDefaultBilling: false }); }} className="text-sm font-bold uppercase flex items-center gap-2 bg-black text-white px-4 py-2 rounded hover:bg-gray-800">{isAddingAddress ? <X className="h-4 w-4"/> : <Plus className="h-4 w-4"/>} {isAddingAddress ? 'Cancel' : 'Add New'}</button></div>
                                     {isAddingAddress && (
@@ -736,7 +771,9 @@ export const Account: React.FC = () => {
                                 </div>
                              )}
 
+                             {/* ... Settings Tab ... */}
                              {activeTab === 'settings' && (
+// ... (keep Settings Tab Content) ...
                                 <div className="space-y-8 max-w-2xl">
                                     <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
                                         <h3 className="text-xl font-bold font-display text-gray-900 mb-6 flex items-center gap-3">
@@ -803,7 +840,11 @@ export const Account: React.FC = () => {
                                     </div>
 
                                     <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"><h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2"><Bell className="h-5 w-5 text-gray-400"/> Notification Preferences</h3><div className="space-y-6"><div className="flex items-center justify-between"><div><h4 className="font-bold text-sm text-gray-900">Marketing & Offers</h4><p className="text-xs text-gray-500 mt-1">Receive updates about new products and promotions.</p></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={prefs.marketing} onChange={(e) => handlePrefChange('marketing', e.target.checked)} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div></label></div><div className="flex items-center justify-between"><div><h4 className="font-bold text-sm text-gray-900">Account Notifications</h4><p className="text-xs text-gray-500 mt-1">Receive transactional emails (Orders, Security).</p></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={prefs.account} onChange={(e) => handlePrefChange('account', e.target.checked)} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div></label></div></div></div>
-                                    <div className="bg-red-50/50 border border-red-100 rounded-2xl p-8"><h3 className="text-lg font-bold text-red-700 mb-2 flex items-center gap-2"><Trash2 className="h-5 w-5"/> Danger Zone</h3><p className="text-sm text-red-600 mb-6">Permanently delete your account and all associated data. This action cannot be undone.</p><button onClick={handleDeleteAccount} className="border border-red-200 bg-white text-red-600 px-6 py-2.5 text-sm font-bold rounded-lg hover:bg-red-50 transition-colors">Delete Account</button></div>
+                                    <div className="bg-red-50/50 border border-red-100 rounded-2xl p-8">
+                                        <h3 className="text-lg font-bold text-red-700 mb-2 flex items-center gap-2"><Trash2 className="h-5 w-5"/> Danger Zone</h3>
+                                        <p className="text-sm text-red-600 mb-6">Permanently delete your account and all associated data. This action cannot be undone.</p>
+                                        <button onClick={handleDeleteAccount} className="border border-red-200 bg-white text-red-600 px-6 py-2.5 text-sm font-bold rounded-lg hover:bg-red-50 transition-colors">Delete Account</button>
+                                    </div>
                                  </div>
                              )}
                          </div>
