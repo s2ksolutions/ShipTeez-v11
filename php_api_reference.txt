@@ -31,6 +31,8 @@ header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
+define('GEMINI_API_KEY', 'AIzaSyDs35GZ-eYsnj-StXWhz5w9QKVIhRnUp0c');
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
@@ -1985,6 +1987,240 @@ if (($method === 'POST' || $method === 'GET') && $path === '/auth/callback') {
         $user = verifyToken();
         requireAdmin($user);
         jsonResponse(['status' => 'ok', 'latency' => 5]);
+    }
+
+
+    //Gemini
+    //Gemini
+    function geminiRequest($prompt, $model = 'gemini-2.5-flash') {
+        $apiKey = GEMINI_API_KEY;
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+        
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['contents' => [['parts' => [['text' => $prompt]]]]]),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 120  // Increased for images
+        ]);
+        $response = curl_exec($ch);
+        curl_close($ch);
+        return $response;
+    }
+
+    function geminiJsonRequest($prompt, $requiredFields) {
+        $prompt .= "\nReturn VALID JSON with these exact fields: " . implode(', ', $requiredFields) . ". No markdown or explanations.";
+        return geminiRequest($prompt);
+    }
+
+    function geminiJsonRequestWithImage($base64Image, $promptText) {
+        $apiKey = GEMINI_API_KEY;
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' . $apiKey;
+        
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode([
+                'contents' => [[
+                    'parts' => [
+                        ['inline_data' => ['mime_type' => 'image/jpeg', 'data' => $base64Image]],
+                        ['text' => $promptText]
+                    ]
+                ]]
+            ]),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 120
+        ]);
+        $response = curl_exec($ch);
+        curl_close($ch);
+        return $response;
+    }
+
+    function geminiImageRequest($prompt) {
+        return geminiRequest($prompt, 'gemini-2.5-flash-exp-image-generation-0717-001');
+    }
+
+    // ✅ EXISTING ENDPOINTS (KEEP)
+    if ($method === 'POST' && $path === '/gemini/proxy') {
+        $input = getJsonInput();
+        $apiKey = GEMINI_API_KEY;
+        $geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+        
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $geminiUrl . '?key=' . $apiKey,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($input),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 120,
+        ]);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        http_response_code($httpCode);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/copy') {
+        $input = getJsonInput();
+        $context = $input['context'] ?? '';
+        $type = $input['type'] ?? 'marketing text';
+        
+        $prompt = "You are a professional e-commerce copywriter. Write engaging, concise, and SEO-optimized {$type}.\nContext: \"{$context}\"\n\nReturn ONLY the text content, no markdown or explanations.";
+        
+        $response = geminiRequest($prompt);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/product-metadata') {
+        $input = getJsonInput();
+        $type = $input['type'] ?? 'T-Shirt';
+        $style = $input['style'] ?? '';
+        
+        $sizes = $type === 'Mug' ? '["11oz", "15oz"]' : '["S", "M", "L", "XL", "2XL"]';
+        $prompt = "Generate a creative, trendy product idea for a {$type} with '{$style}' design style.\nCategory: {$type}\nSizes MUST be {$sizes}.\nReturn valid JSON only.";
+        
+        $response = geminiJsonRequest($prompt, [
+            'title', 'description', 'designDescription', 'price', 'sku', 
+            'tags', 'category', 'hierarchy', 'colors', 'sizes'
+        ]);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/image-metadata') {
+        $input = getJsonInput();
+        $base64Image = $input['image'] ?? '';
+        
+        $prompt = "Analyze this product image deeply. Generate Title, Description, Tags, Category (Mug/T-Shirt), Hierarchy. Return valid JSON.";
+        $response = geminiJsonRequestWithImage($base64Image, $prompt);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/flat-design') {
+        $input = getJsonInput();
+        $designDescription = $input['designDescription'] ?? '';
+        
+        $prompt = "Create high-quality flat vector art for merchandise printing: \"{$designDescription}\". Isolated on white background. Print-ready.";
+        $response = geminiImageRequest($prompt);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/product-image') {
+        $input = getJsonInput();
+        $category = $input['category'] ?? 'T-Shirt';
+        $view = $input['view'] ?? 'Front';
+        $designBase64 = $input['designBase64'] ?? '';
+        $designDescription = $input['designDescription'] ?? '';
+        
+        if ($designBase64) {
+            $response = geminiJsonRequestWithImage($designBase64, "Warp this design onto realistic {$category} product photo. View: {$view}. Professional e-commerce lighting and shadows.");
+        } else {
+            $prompt = "Realistic studio product photo of {$category}. Design theme: \"{$designDescription}\". View: {$view}. Perfect lighting.";
+            $response = geminiImageRequest($prompt);
+        }
+        
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/chat') {
+        $input = getJsonInput();
+        $message = $input['message'] ?? '';
+        $history = $input['history'] ?? [];
+        $userData = $input['user'] ?? null;
+        $systemPrompt = $input['systemPrompt'] ?? '';
+        
+        $userContext = '';
+        if ($userData) {
+            $userContext = "\nActive User: {$userData['name']} ({$userData['email']}).";
+            if (isset($userData['orders']) && count($userData['orders']) > 0) {
+                $recentOrders = array_slice($userData['orders'], 0, 3);
+                foreach ($recentOrders as $order) {
+                    $userContext .= "\n- Order #{$order['id']}: {$order['status']} (Total: $" . number_format($order['total'], 2) . ", Tracking: " . ($order['trackingNumber'] ?? 'Pending') . ")";
+                }
+            } else {
+                $userContext .= "\nUser has no recent orders.";
+            }
+        } else {
+            $userContext = "\nUser is a guest.";
+        }
+        
+        $defaultPrompt = "You are helpful customer support for ShipTeez. Shipping: 3-5 days. 30-day returns. High-quality materials. Be concise.";
+        
+        $historyText = '';
+        foreach ($history as $msg) {
+            $historyText .= "{$msg['role']}: {$msg['text']}\n";
+        }
+        
+        $fullPrompt = ($systemPrompt ?: $defaultPrompt) . $userContext . "\n\nHistory:\n{$historyText}User: {$message}\nAssistant:";
+        
+        $response = geminiRequest($fullPrompt);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    // ✅ NEW ENDPOINTS
+    if ($method === 'POST' && $path === '/gemini/lifestyle-image') {
+        $input = getJsonInput();
+        $productImage = $input['productImage'] ?? '';
+        $prompt = $input['prompt'] ?? '';
+        
+        $response = geminiJsonRequestWithImage($productImage, "Place this product in lifestyle scene: '{$prompt}'. Match lighting/perspective. Photorealistic.");
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/hero-image') {
+        $input = getJsonInput();
+        $prompt = $input['prompt'] ?? '';
+        
+        $fullPrompt = "Wide hero background image (16:9). Theme: '{$prompt}'. Professional, clean, text-overlay ready.";
+        $response = geminiImageRequest($fullPrompt);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/theme-from-image') {
+        $input = getJsonInput();
+        $base64Image = $input['image'] ?? '';
+        
+        $prompt = "Analyze image for UI theme. JSON: primary, secondary, accent, background, text, fontFamily, borderRadius. Hex colors.";
+        $response = geminiJsonRequestWithImage($base64Image, $prompt);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
+    }
+
+    if ($method === 'POST' && $path === '/gemini/promo-idea') {
+        $input = getJsonInput();
+        $theme = $input['theme'] ?? '';
+        
+        $prompt = "Promo campaign for '{$theme}'. JSON: {code: string, discountType: 'percentage'|'fixed', value: number}";
+        $response = geminiJsonRequest($prompt, ['code', 'discountType', 'value']);
+        header('Content-Type: application/json');
+        echo $response;
+        exit;
     }
 
     // Fallback
