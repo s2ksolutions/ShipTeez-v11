@@ -6,7 +6,7 @@ import { useStore } from '../context/StoreProvider';
 import { db } from '../services/db';
 
 export const Footer: React.FC = () => {
-    const { content, settings, activeCategories, showToast, user, setLoginModalOpen } = useStore();
+    const { content, settings, activeCategories, showToast, user, setLoginModalOpen, openWishlist } = useStore();
     const [email, setEmail] = useState('');
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [isSubscribedLocal, setIsSubscribedLocal] = useState(false);
@@ -127,7 +127,11 @@ export const Footer: React.FC = () => {
                                     </Link>
                                 </li>
                             ))}
-                            <li><Link to="/wishlist" className="hover:text-white transition-colors">Wishlist</Link></li>
+                            <li>
+                                <button onClick={openWishlist} className="hover:text-white transition-colors text-left">
+                                    Wishlist
+                                </button>
+                            </li>
                         </ul>
                     </div>
 
