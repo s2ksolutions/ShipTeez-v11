@@ -153,12 +153,19 @@ export const Shop: React.FC = () => {
     }, [editingMax]);
 
     const visibleLoadedProducts = useMemo(() => allProducts.filter(p => !(p as any)._loading && !p.isHidden), [allProducts]);
-    const uniqueColors = useMemo(() => Array.from(new Set(visibleLoadedProducts.flatMap(p => p.colors || []))).filter(Boolean), [visibleLoadedProducts]);
-    const uniqueSizes = useMemo(() => Array.from(new Set(visibleLoadedProducts.flatMap(p => p.sizes || []))).filter(Boolean), [visibleLoadedProducts]);
+
+    // NEW: Filter by category first to determine available facets
+    const categoryFilteredProducts = useMemo(() => {
+        if (selectedCategory === 'All') return visibleLoadedProducts;
+        return visibleLoadedProducts.filter(p => p.category.startsWith(selectedCategory));
+    }, [visibleLoadedProducts, selectedCategory]);
+
+    const uniqueColors = useMemo(() => Array.from(new Set(categoryFilteredProducts.flatMap(p => p.colors || []))).filter(Boolean), [categoryFilteredProducts]);
+    const uniqueSizes = useMemo(() => Array.from(new Set(categoryFilteredProducts.flatMap(p => p.sizes || []))).filter(Boolean), [categoryFilteredProducts]);
     
     const uniqueTags = useMemo(() => {
         const tags = new Set<string>();
-        visibleLoadedProducts.forEach(p => {
+        categoryFilteredProducts.forEach(p => {
             p.tags?.forEach(t => {
                 const trimmed = t.trim();
                 if (trimmed) {
@@ -168,18 +175,18 @@ export const Shop: React.FC = () => {
             });
         });
         return Array.from(tags).sort((a, b) => a.localeCompare(b));
-    }, [visibleLoadedProducts]);
+    }, [categoryFilteredProducts]);
 
     const availableSpecials = useMemo(() => {
         const options = new Set<string>();
-        visibleLoadedProducts.forEach(p => {
+        categoryFilteredProducts.forEach(p => {
             if (p.originalPrice && p.price < p.originalPrice) options.add('On Sale');
             if (p.isFeatured) options.add('Featured');
             if (p.isClearance) options.add('Clearance');
             if (p.isBogo) options.add('Buy 1 Get 1');
         });
         return Array.from(options).sort();
-    }, [visibleLoadedProducts]);
+    }, [categoryFilteredProducts]);
     
     // --- TREE BUILDER ---
     const categoryTree = useMemo(() => {
@@ -569,7 +576,17 @@ export const Shop: React.FC = () => {
 
                         <div className="space-y-8">
                             <div>
-                                <h3 className="font-bold text-sm uppercase mb-3">Category</h3>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="font-bold text-sm uppercase">Category</h3>
+                                    {selectedCategory !== 'All' && (
+                                        <button 
+                                            onClick={() => { setSelectedCategory('All'); setSearchParams({}); }} 
+                                            className="text-[10px] text-gray-500 hover:text-red-600 underline font-medium uppercase"
+                                        >
+                                            Reset
+                                        </button>
+                                    )}
+                                </div>
                                 <div className="space-y-1">
                                     <button onClick={() => { setSelectedCategory('All'); setSearchParams({}); setIsFilterOpen(false); }} className={`w-full text-left py-1.5 px-2 rounded-md text-sm ${selectedCategory === 'All' ? 'bg-black text-white font-bold' : 'text-gray-600 hover:bg-gray-100'}`}>All Products</button>
                                     {categoryTree.map(node => <CategoryFilterTree key={node.fullPath} node={node} />)}
