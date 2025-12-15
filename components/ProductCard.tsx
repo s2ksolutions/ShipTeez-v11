@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Product } from '../types';
 import { Eye, Heart, ShoppingBag, ShoppingCart, Zap, ChevronRight } from 'lucide-react';
 import { useStore } from '../context/StoreProvider';
@@ -20,6 +20,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick, badg
   const navigate = useNavigate();
   const isFavorite = isInWishlist(product.id);
   const isSale = product.originalPrice && product.originalPrice > product.price;
+  
+  // Local state for image display (color variants)
+  const [activeImage, setActiveImage] = useState(product.images[0]);
 
   const saveLastViewed = () => {
       sessionStorage.setItem('artisan_last_viewed_product', product.id);
@@ -48,9 +51,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick, badg
 
   const handleMouseEnter = () => {
       db.prefetchProduct(product.id);
-      if (product.images[0]) {
+      if (activeImage) {
           const img = new Image();
-          img.src = product.images[0];
+          img.src = activeImage;
+      }
+  };
+
+  const handleColorHover = (color: string) => {
+      const variant = product.colorVariants?.find(v => v.color === color);
+      if (variant) {
+          setActiveImage(variant.image);
+      } else {
+          // Reset to default main image if no specific variant image
+          setActiveImage(product.images[0]);
       }
   };
 
@@ -77,7 +90,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick, badg
         >
             <div className="w-full sm:w-48 h-48 flex-shrink-0 bg-gray-100 relative overflow-hidden rounded-lg">
                 <OptimizedImage
-                    src={product.images[0] || 'https://picsum.photos/400/400'}
+                    src={activeImage || 'https://picsum.photos/400/400'}
                     alt={product.title}
                     className="h-full w-full object-cover object-center"
                     priority={priority}
@@ -155,19 +168,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick, badg
     >
       <div className="aspect-square w-full overflow-hidden bg-gray-100 relative mb-4 rounded-sm">
         <OptimizedImage
-          src={product.images[0] || 'https://picsum.photos/400/400'}
+          src={activeImage || 'https://picsum.photos/400/400'}
           alt={product.title}
-          className="h-full w-full object-cover object-center"
+          className="h-full w-full object-cover object-center transition-all duration-300"
           priority={priority}
         />
 
-        {product.images[1] && (
+        {/* Secondary Hover Image (Only if activeImage is main, and there's a 2nd main image) */}
+        {activeImage === product.images[0] && product.images[1] && (
             <img 
                 src={product.images[1]}
                 alt={product.title}
                 loading="lazy"
                 decoding="async"
-                className="absolute inset-0 h-full w-full object-cover object-center opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-20"
+                className="absolute inset-0 h-full w-full object-cover object-center opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-20 pointer-events-none"
             />
         )}
         
@@ -235,7 +249,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick, badg
                 {isSale && <p className="text-xs text-gray-400 line-through">${product.originalPrice?.toFixed(2)}</p>}
             </div>
             
-            {product.category === 'T-Shirt' && product.sizes && product.sizes.length > 0 && (
+            {/* Interactive Color Swatches */}
+            {product.colors && product.colors.length > 0 ? (
+                <div className="flex gap-1 items-center" onClick={(e) => e.stopPropagation()}>
+                    {product.colors.slice(0, 5).map(color => (
+                        <div 
+                            key={color}
+                            onMouseEnter={() => handleColorHover(color)}
+                            onMouseLeave={() => setActiveImage(product.images[0])}
+                            className="w-3 h-3 rounded-full border border-gray-200 cursor-pointer hover:scale-125 transition-transform shadow-sm"
+                            style={{ backgroundColor: color.toLowerCase().includes('white') ? '#ffffff' : color.toLowerCase() }}
+                            title={color}
+                        />
+                    ))}
+                    {product.colors.length > 5 && <span className="text-[10px] text-gray-400">+</span>}
+                </div>
+            ) : product.category === 'T-Shirt' && product.sizes && product.sizes.length > 0 && (
                 <div className="flex gap-1 items-center">
                     {product.sizes.slice(0, 4).map(size => (
                         <span key={size} className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">

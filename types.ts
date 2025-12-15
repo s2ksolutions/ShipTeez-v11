@@ -1,4 +1,10 @@
 
+export interface ColorVariant {
+  color: string;
+  image: string; // Base64 or URL
+  isHidden: boolean; // If true, not shown in main carousel, only on selection
+}
+
 export interface Product {
   id: string;
   sku: string;
@@ -15,6 +21,7 @@ export interface Product {
   designAsset?: string;
   sizes: string[];
   colors: string[];
+  colorVariants?: ColorVariant[]; // New: Color to Image Mapping
   itemSpecifics?: Record<string, string>; // New: Custom Attributes
   stock: number;
   promoCode?: string;

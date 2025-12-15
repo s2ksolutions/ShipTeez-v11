@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Product, StoreContent, ItemSpecificTemplate } from '../../types';
+import { Product, StoreContent, ItemSpecificTemplate, ColorVariant } from '../../types';
 import { adminMiddleware } from '../../services/adminMiddleware';
 import { db } from '../../services/db';
 import { toBase64, slugify } from '../../utils';
@@ -67,6 +67,9 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ products, co
 
     // Specifics Editing State (Local to modal)
     const [editSpecifics, setEditSpecifics] = useState<{key: string, value: string}[]>([]);
+    
+    // Color Variant State
+    const [editVariants, setEditVariants] = useState<ColorVariant[]>([]);
 
     // Bulk Edit State
     const [bulkChanges, setBulkChanges] = useState({
@@ -176,6 +179,7 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ products, co
         setEditTags(p.tags.join(', '));
         setEditColors(p.colors ? p.colors.join(', ') : 'White');
         setEditAliases(p.aliases || []);
+        setEditVariants(p.colorVariants || []);
         const specs = p.itemSpecifics ? Object.entries(p.itemSpecifics).map(([key, value]) => ({ key, value })) : [];
         setEditSpecifics(specs);
     };
@@ -202,6 +206,7 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ products, co
         setEditColors('White');
         setEditAliases([]);
         setEditSpecifics([]);
+        setEditVariants([]);
     };
     
     const handleUpdateProduct = async () => { 
@@ -212,13 +217,19 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ products, co
                 if(s.key.trim() && s.value.trim()) specsMap[s.key.trim()] = s.value.trim();
             });
 
+            // Merge variants into main images based on "isHidden"
+            // We keep a separate list of images that are "main gallery"
+            // And variants help populate it.
+            // Actually, keep current images logic, but update colorVariants array
+            
             await adminMiddleware.inventory.updateProduct({ 
                 ...editingProduct, 
                 slug: slugify(editingProduct.slug || editingProduct.title),
                 tags: editTags.split(',').map(t => t.trim()).filter(Boolean),
                 colors: editColors.split(',').map(c => c.trim()).filter(Boolean),
                 aliases: editAliases,
-                itemSpecifics: specsMap
+                itemSpecifics: specsMap,
+                colorVariants: editVariants
             });
             setEditingProduct(null); 
             await onRefresh();
@@ -226,6 +237,63 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ products, co
         } catch (e) {
             showToast("Failed to save product.", "error");
         }
+    };
+
+    // --- Color Variant Logic ---
+    const handleVariantUpload = async (e: React.ChangeEvent<HTMLInputElement>, color: string) => {
+        if (e.target.files?.[0]) {
+            try {
+                const base64 = await toBase64(e.target.files[0]);
+                const existingIndex = editVariants.findIndex(v => v.color === color);
+                const newVariant: ColorVariant = {
+                    color,
+                    image: base64,
+                    isHidden: existingIndex > -1 ? editVariants[existingIndex].isHidden : false
+                };
+                
+                let updatedVariants = [...editVariants];
+                if(existingIndex > -1) updatedVariants[existingIndex] = newVariant;
+                else updatedVariants.push(newVariant);
+                
+                setEditVariants(updatedVariants);
+                
+                // If not hidden, add to main images if not already there
+                if (!newVariant.isHidden && editingProduct) {
+                    setEditingProduct({
+                        ...editingProduct,
+                        images: [...editingProduct.images, base64]
+                    });
+                }
+            } catch(e) {
+                showToast("Failed to process variant image", "error");
+            }
+        }
+    };
+
+    const toggleVariantVisibility = (color: string) => {
+        setEditVariants(prev => prev.map(v => {
+            if (v.color === color) {
+                const nextHidden = !v.isHidden;
+                
+                // If switching TO hidden -> remove from main images
+                if (nextHidden && editingProduct) {
+                    setEditingProduct({
+                        ...editingProduct,
+                        images: editingProduct.images.filter(img => img !== v.image)
+                    });
+                }
+                // If switching TO visible -> add to main images if not exists
+                if (!nextHidden && editingProduct && !editingProduct.images.includes(v.image)) {
+                    setEditingProduct({
+                        ...editingProduct,
+                        images: [...editingProduct.images, v.image]
+                    });
+                }
+                
+                return { ...v, isHidden: nextHidden };
+            }
+            return v;
+        }));
     };
 
     // Category Management Logic
@@ -1155,6 +1223,50 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ products, co
                                 </div>
                             </div>
                             
+                            {/* Color Variants Mappings */}
+                            {editColors && (
+                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                    <label className="text-xs font-bold uppercase text-gray-500 mb-2 block flex items-center gap-1"><Layers className="h-3 w-3"/> Color Variants Mappings</label>
+                                    <div className="space-y-2">
+                                        {editColors.split(',').map(c => c.trim()).filter(Boolean).map(color => {
+                                            const variant = editVariants.find(v => v.color === color);
+                                            return (
+                                                <div key={color} className="flex items-center gap-3 p-2 bg-white border rounded shadow-sm">
+                                                    <div className="w-4 h-4 rounded-full border border-gray-200 shadow-inner" style={{backgroundColor: color.toLowerCase()}}></div>
+                                                    <span className="text-sm font-bold w-20 truncate">{color}</span>
+                                                    
+                                                    {variant?.image ? (
+                                                        <img src={variant.image} className="w-8 h-8 rounded object-cover border" />
+                                                    ) : (
+                                                        <div className="w-8 h-8 rounded bg-gray-100 border flex items-center justify-center text-gray-400"><ImageIcon className="h-4 w-4"/></div>
+                                                    )}
+                                                    
+                                                    <div className="flex-1">
+                                                        <label className="cursor-pointer text-xs text-blue-600 hover:underline font-bold">
+                                                            {variant?.image ? 'Change' : 'Upload Image'}
+                                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleVariantUpload(e, color)} />
+                                                        </label>
+                                                    </div>
+
+                                                    {variant && (
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={!variant.isHidden} 
+                                                                onChange={() => toggleVariantVisibility(color)}
+                                                                className="rounded text-black focus:ring-black" 
+                                                            />
+                                                            <span className="text-[10px] font-bold uppercase text-gray-500">Show in Gallery</span>
+                                                        </label>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-2">Upload specific images for each color. Uncheck "Show in Gallery" to only show the image when the color is selected.</p>
+                                </div>
+                            )}
+                            
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs font-bold uppercase text-gray-500 mb-1">Size Guide Template</label>
@@ -1431,8 +1543,7 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ products, co
 
             {/* 4. Product List & Bulk Editing */}
             <div className="bg-white border border-gray-200 shadow-sm">
-                
-                {/* Bulk Actions Panel */}
+                {/* Bulk Actions Panel... */}
                 {selectedProducts.size > 0 && (
                     <div className="bg-indigo-50 border-b border-indigo-100 p-4 animate-in slide-in-from-top-2">
                         <div className="flex items-center justify-between mb-4">

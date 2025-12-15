@@ -39,6 +39,16 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
         setIsZoomEnabled(false);
     }, [product]);
 
+    // Handle Color Switching for Variant Images
+    useEffect(() => {
+        if (product && selectedColor && product.colorVariants) {
+            const variant = product.colorVariants.find(v => v.color === selectedColor);
+            if (variant) {
+                setActiveImage(variant.image);
+            }
+        }
+    }, [selectedColor, product]);
+
     // Focus Trap
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -150,21 +160,21 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                 <div className="w-full md:w-3/5 bg-gray-50 flex flex-col justify-center relative h-1/2 md:h-auto">
                      <div className="flex flex-col-reverse gap-4 h-full p-6 md:p-8">
                         {/* Thumbnails */}
-                        {product.images.length > 1 && (
-                            <div className="flex gap-4 overflow-x-auto py-2 no-scrollbar justify-center">
-                                {product.images.map((image, idx) => (
-                                    <button
-                                    key={idx}
-                                    onClick={() => { setActiveImage(image); setIsZoomEnabled(false); }}
-                                    className={`relative flex-shrink-0 h-16 w-16 cursor-pointer border transition-all ${
-                                        activeImage === image ? 'border-black opacity-100' : 'border-transparent opacity-60 hover:opacity-100'
-                                    }`}
-                                    >
-                                    <img src={image} alt="" className="h-full w-full object-cover" />
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        <div className="flex gap-4 overflow-x-auto py-2 no-scrollbar justify-center">
+                            {product.images.map((image, idx) => (
+                                <button
+                                key={idx}
+                                onClick={() => { setActiveImage(image); setIsZoomEnabled(false); }}
+                                className={`relative flex-shrink-0 h-16 w-16 cursor-pointer border transition-all ${
+                                    activeImage === image ? 'border-black opacity-100' : 'border-transparent opacity-60 hover:opacity-100'
+                                }`}
+                                >
+                                <img src={image} alt="" className="h-full w-full object-cover" />
+                                </button>
+                            ))}
+                            {/* Hidden Variants logic handled by color selection, but if user wants to see all, we could list them here. 
+                                Standard UX is usually driven by color selection though. */}
+                        </div>
 
                         {/* Main Image */}
                         <div 

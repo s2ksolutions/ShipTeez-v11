@@ -163,6 +163,16 @@ export const ProductDetails: React.FC = () => {
     load();
   }, [id, user]);
 
+  // Handle Color Switching for Variant Images
+  useEffect(() => {
+      if (product && selectedColor && product.colorVariants) {
+          const variant = product.colorVariants.find(v => v.color === selectedColor);
+          if (variant) {
+              setActiveImage(variant.image);
+          }
+      }
+  }, [selectedColor, product]);
+
   const handleMouseEnter = () => {
       if (isZoomEnabled) setIsHovering(true);
   };
@@ -236,6 +246,7 @@ export const ProductDetails: React.FC = () => {
             <div className="flex flex-col-reverse gap-6">
               <div className="mx-auto hidden w-full max-w-2xl sm:block lg:max-w-none">
                 <div className="grid grid-cols-4 gap-6" aria-orientation="horizontal" role="tablist">
+                  {/* Standard Images */}
                   {product.images.map((image, idx) => (
                     <button
                       key={idx}
@@ -246,6 +257,23 @@ export const ProductDetails: React.FC = () => {
                     >
                       <span className="absolute inset-0 overflow-hidden">
                         <img src={image} alt="" className="h-full w-full object-cover object-center" />
+                      </span>
+                    </button>
+                  ))}
+                  
+                  {/* Mapped Variants (Hidden ones that aren't in main array but exist in variants) */}
+                  {product.colorVariants?.filter(v => v.isHidden && !product.images.includes(v.image)).map((v, idx) => (
+                      <button
+                      key={`var-${idx}`}
+                      onClick={() => { setActiveImage(v.image); setIsZoomEnabled(false); setSelectedColor(v.color); }}
+                      className={`relative flex h-24 cursor-pointer items-center justify-center bg-gray-50 text-sm font-medium uppercase text-gray-900 hover:bg-gray-100 ${
+                          activeImage === v.image ? 'ring-2 ring-black' : 'ring-transparent'
+                      }`}
+                      title={v.color}
+                    >
+                      <span className="absolute inset-0 overflow-hidden">
+                        <img src={v.image} alt={v.color} className="h-full w-full object-cover object-center" />
+                        <span className="absolute bottom-0 right-0 bg-white/80 text-[8px] px-1 text-black font-bold">{v.color}</span>
                       </span>
                     </button>
                   ))}
