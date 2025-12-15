@@ -1,0 +1,85 @@
+
+-- Enable Write-Ahead Logging for concurrency
+PRAGMA journal_mode = WAL;
+
+-- Users Table
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    email TEXT UNIQUE,
+    password TEXT, -- Bcrypt hash
+    role TEXT, -- 'admin' or 'customer'
+    createdAt INTEGER
+);
+
+-- Products Table
+CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    slug TEXT,
+    description TEXT,
+    price REAL,
+    category TEXT,
+    stock INTEGER,
+    data TEXT, -- JSON blob for arrays (images, tags, colors, sizes)
+    createdAt INTEGER
+);
+
+-- Orders Table
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    userId TEXT,
+    total REAL,
+    status TEXT, -- 'Processing', 'Shipped', etc.
+    data TEXT, -- JSON blob for full order details (items, address)
+    createdAt INTEGER
+);
+
+-- Store Content (CMS) Table
+CREATE TABLE IF NOT EXISTS content (
+    id TEXT PRIMARY KEY,
+    key TEXT UNIQUE, -- e.g., 'store_content'
+    data TEXT -- JSON blob for settings, layout, policies
+);
+
+-- Support Tickets Table
+CREATE TABLE IF NOT EXISTS tickets (
+    id TEXT PRIMARY KEY,
+    userId TEXT,
+    subject TEXT,
+    status TEXT,
+    messages TEXT, -- JSON Array of message objects
+    createdAt INTEGER,
+    updatedAt INTEGER
+);
+
+-- Promo Codes Table
+CREATE TABLE IF NOT EXISTS promos (
+    code TEXT PRIMARY KEY,
+    type TEXT, -- 'percentage' or 'fixed'
+    value REAL,
+    active INTEGER, -- 0 or 1
+    usage INTEGER,
+    data TEXT -- JSON blob for meta (expiry, min order)
+);
+
+-- Newsletter Subscribers Table
+CREATE TABLE IF NOT EXISTS subscribers (
+    email TEXT PRIMARY KEY,
+    isVerified INTEGER, -- 0 or 1
+    token TEXT,
+    createdAt INTEGER
+);
+
+-- Default Admin User (Password: 'admin')
+-- Note: In a real production setup, generate a new bcrypt hash.
+-- The hash below is for 'admin'
+INSERT OR IGNORE INTO users (id, name, email, password, role, createdAt) 
+VALUES (
+    'admin-init', 
+    'System Admin', 
+    'admin@shipteez.com', 
+    '$2a$10$X.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x', 
+    'admin', 
+    1700000000000
+);

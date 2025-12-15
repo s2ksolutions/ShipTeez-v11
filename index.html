@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="ShipTeez Shop" />
+    <title>ShipTeez - Curated Shop</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+      // Polyfill process for browser environment
+      window.process = {
+        env: {
+          NODE_ENV: 'development',
+          API_KEY: '', // Injected by Vite/Environment
+          ...window.process?.env
+        }
+      };
+
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              display: ['Jost', 'sans-serif'],
+            },
+            colors: {
+              primary: '#1a1a1a',
+              secondary: '#f4f4f4'
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      .no-scrollbar::-webkit-scrollbar {
+          display: none;
+      }
+      .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Jost', sans-serif;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/": "https://esm.sh/react-dom@18.2.0/",
+    "react/": "https://esm.sh/react@18.2.0/",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@18.2.0,react-dom@18.2.0",
+    "@google/genai": "https://esm.sh/@google/genai",
+    "lucide-react": "https://esm.sh/lucide-react@0.344.0?deps=react@18.2.0",
+    "@stripe/stripe-js": "https://esm.sh/@stripe/stripe-js@3.0.7",
+    "@stripe/react-stripe-js": "https://esm.sh/@stripe/react-stripe-js@2.6.0?deps=react@18.2.0,@stripe/stripe-js@3.0.7",
+    "bcryptjs": "https://esm.sh/bcryptjs@^3.0.3",
+    "jsonwebtoken": "https://esm.sh/jsonwebtoken@^9.0.3",
+    "crypto": "https://esm.sh/crypto@^1.0.1",
+    "nodemailer": "https://esm.sh/nodemailer@^7.0.11",
+    "vite": "https://esm.sh/vite@^7.2.7",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "path": "https://esm.sh/path@^0.12.7",
+    "stripe": "https://esm.sh/stripe@^20.0.0",
+    "sqlite": "https://esm.sh/sqlite@^5.1.1",
+    "cors": "https://esm.sh/cors@^2.8.5",
+    "body-parser": "https://esm.sh/body-parser@^2.2.1",
+    "sqlite3": "https://esm.sh/sqlite3@^5.1.7",
+    "express": "https://esm.sh/express@^5.2.1",
+    "fs": "https://esm.sh/fs@^0.0.1-security",
+    "url": "https://esm.sh/url@^0.11.4",
+    "react-google-recaptcha": "https://esm.sh/react-google-recaptcha@^3.1.0?deps=react@18.2.0,react-dom@18.2.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
