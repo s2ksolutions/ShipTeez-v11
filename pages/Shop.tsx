@@ -6,13 +6,14 @@ import { db } from '../services/db';
 import { ProductCard } from '../components/ProductCard';
 import { ProductModal } from '../components/ProductModal';
 import { SEO } from '../components/SEO';
-import { X, ChevronDown, SlidersHorizontal, Search, Trash2, LayoutGrid, Grid3x3, List, ChevronRight, Check } from 'lucide-react';
+import { X, ChevronDown, SlidersHorizontal, Search, Trash2, LayoutGrid, Grid3x3, List, ChevronRight, Check, ChevronLeft, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 
 const MIN_PRICE = 0;
 const MAX_PRICE = 100;
 const MIN_GAP = 5;
 const CATEGORY_SEPARATOR = " > ";
+const PAGE_SIZE = 24; 
 
 // Helper Interface for Tree
 interface CategoryNode {
@@ -25,6 +26,9 @@ export const Shop: React.FC = () => {
     const [allProducts, setAllProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchParams, setSearchParams] = useSearchParams();
+    
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
     
     // Grid Layout State
     const [gridMode, setGridMode] = useState<'cozy' | 'compact' | 'list'>('cozy');
@@ -65,7 +69,6 @@ export const Shop: React.FC = () => {
                 const ids = await db.getProductIds();
                 
                 // 2. Initialize Skeletons
-                // This establishes the visual grid immediately so items don't "pop" into random places
                 const skeletons: Product[] = ids.map(id => ({
                     id,
                     title: '',
@@ -81,7 +84,6 @@ export const Shop: React.FC = () => {
                     stock: 0,
                     sku: '',
                     createdAt: 0,
-                    // Use a temporary property to flag loading state
                     _loading: true 
                 } as any));
                 
@@ -89,14 +91,12 @@ export const Shop: React.FC = () => {
                 setLoading(false); // Enable rendering of skeletons
 
                 // 3. Fire Parallel Requests
-                // Using a simple batching to avoid overwhelming browser (10 concurrent)
                 const batchSize = 10;
                 for (let i = 0; i < ids.length; i += batchSize) {
                     const batch = ids.slice(i, i + batchSize);
                     await Promise.all(batch.map(async (id) => {
                         const detail = await db.getProduct(id);
                         if (detail) {
-                            // Update specific item in state, preserving array order
                             setAllProducts(prev => prev.map(p => p.id === id ? detail : p));
                         }
                     }));
@@ -112,7 +112,6 @@ export const Shop: React.FC = () => {
     useEffect(() => {
         if (categoryParam) {
             setSelectedCategory(categoryParam);
-            // Auto-expand parent paths
             const parts = categoryParam.split(CATEGORY_SEPARATOR);
             const pathsToExpand = new Set<string>();
             let currentPath = "";
@@ -140,6 +139,11 @@ export const Shop: React.FC = () => {
         setTagSearch('');
     }, [searchParam]);
 
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchParam, selectedCategory, selectedColors, selectedSizes, selectedTags, selectedSpecials, priceRange, sortOption]);
+
     useEffect(() => {
         if (editingMin && minInputRef.current) minInputRef.current.focus();
     }, [editingMin]);
@@ -148,13 +152,13 @@ export const Shop: React.FC = () => {
         if (editingMax && maxInputRef.current) maxInputRef.current.focus();
     }, [editingMax]);
 
-    const visibleProducts = useMemo(() => allProducts.filter(p => !(p as any)._loading && !p.isHidden), [allProducts]);
-    const uniqueColors = useMemo(() => Array.from(new Set(visibleProducts.flatMap(p => p.colors || []))).filter(Boolean), [visibleProducts]);
-    const uniqueSizes = useMemo(() => Array.from(new Set(visibleProducts.flatMap(p => p.sizes || []))).filter(Boolean), [visibleProducts]);
+    const visibleLoadedProducts = useMemo(() => allProducts.filter(p => !(p as any)._loading && !p.isHidden), [allProducts]);
+    const uniqueColors = useMemo(() => Array.from(new Set(visibleLoadedProducts.flatMap(p => p.colors || []))).filter(Boolean), [visibleLoadedProducts]);
+    const uniqueSizes = useMemo(() => Array.from(new Set(visibleLoadedProducts.flatMap(p => p.sizes || []))).filter(Boolean), [visibleLoadedProducts]);
     
     const uniqueTags = useMemo(() => {
         const tags = new Set<string>();
-        visibleProducts.forEach(p => {
+        visibleLoadedProducts.forEach(p => {
             p.tags?.forEach(t => {
                 const trimmed = t.trim();
                 if (trimmed) {
@@ -164,22 +168,22 @@ export const Shop: React.FC = () => {
             });
         });
         return Array.from(tags).sort((a, b) => a.localeCompare(b));
-    }, [visibleProducts]);
+    }, [visibleLoadedProducts]);
 
     const availableSpecials = useMemo(() => {
         const options = new Set<string>();
-        visibleProducts.forEach(p => {
+        visibleLoadedProducts.forEach(p => {
             if (p.originalPrice && p.price < p.originalPrice) options.add('On Sale');
             if (p.isFeatured) options.add('Featured');
             if (p.isClearance) options.add('Clearance');
             if (p.isBogo) options.add('Buy 1 Get 1');
         });
         return Array.from(options).sort();
-    }, [visibleProducts]);
+    }, [visibleLoadedProducts]);
     
     // --- TREE BUILDER ---
     const categoryTree = useMemo(() => {
-        const rawCategories = Array.from(new Set(visibleProducts.map(p => p.category)));
+        const rawCategories = Array.from(new Set(visibleLoadedProducts.map(p => p.category)));
         const root: CategoryNode[] = [];
         
         rawCategories.sort().forEach((path: string) => {
@@ -198,13 +202,13 @@ export const Shop: React.FC = () => {
             });
         });
         return root;
-    }, [visibleProducts]);
+    }, [visibleLoadedProducts]);
 
     const displayedTags = useMemo(() => uniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())), [uniqueTags, tagSearch]);
 
     const filteredProducts = useMemo(() => {
         return allProducts.filter(product => {
-            // Keep skeletons in the list (they bypass filters to maintain grid structure during load)
+            // Keep skeletons in the list during loading to maintain layout
             if ((product as any)._loading) return true;
 
             if (product.isHidden) return false;
@@ -260,7 +264,7 @@ export const Shop: React.FC = () => {
 
             return true;
         }).sort((a, b) => {
-            // Loading items stay in place (or move to end if preferred, but neutral is smoother)
+            // Keep skeletons neutral in sort
             if ((a as any)._loading) return 1;
             if ((b as any)._loading) return -1;
 
@@ -271,6 +275,21 @@ export const Shop: React.FC = () => {
             }
         });
     }, [allProducts, searchParam, selectedCategory, selectedColors, selectedSizes, selectedTags, selectedSpecials, priceRange, sortOption]);
+
+    // Paginate the filtered results
+    const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE);
+    
+    const displayedProducts = useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const end = start + PAGE_SIZE;
+        return filteredProducts.slice(start, end);
+    }, [filteredProducts, currentPage]);
+
+    const handlePageChange = (page: number) => {
+        if (page < 1 || page > totalPages) return;
+        setCurrentPage(page);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     const toggleFilter = (set: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
         set(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
@@ -366,6 +385,79 @@ export const Shop: React.FC = () => {
                         ))}
                     </div>
                 )}
+            </div>
+        );
+    };
+
+    // --- Pagination Component ---
+    const PaginationControls = () => {
+        if (totalPages <= 1) return null;
+
+        // Smart range logic
+        const getPageNumbers = () => {
+            const delta = 2; // Number of pages to show on each side of current
+            const range = [];
+            const rangeWithDots = [];
+            let l;
+
+            range.push(1);
+            for (let i = currentPage - delta; i <= currentPage + delta; i++) {
+                if (i < totalPages && i > 1) {
+                    range.push(i);
+                }
+            }
+            range.push(totalPages);
+
+            for (let i of range) {
+                if (l) {
+                    if (i - l === 2) {
+                        rangeWithDots.push(l + 1);
+                    } else if (i - l !== 1) {
+                        rangeWithDots.push('...');
+                    }
+                }
+                rangeWithDots.push(i);
+                l = i;
+            }
+            return rangeWithDots;
+        };
+
+        return (
+            <div className="flex items-center justify-center gap-2 select-none">
+                <button 
+                    onClick={() => handlePageChange(currentPage - 1)} 
+                    disabled={currentPage === 1}
+                    className="p-2 border rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white"
+                >
+                    <ChevronLeft className="h-4 w-4"/>
+                </button>
+                
+                {getPageNumbers().map((p, i) => (
+                    <React.Fragment key={i}>
+                        {p === '...' ? (
+                            <span className="px-2 text-gray-400 text-sm">...</span>
+                        ) : (
+                            <button
+                                onClick={() => handlePageChange(p as number)}
+                                className={`h-8 min-w-[2rem] px-2 rounded-md text-sm font-bold transition-colors ${
+                                    currentPage === p 
+                                        ? 'bg-black text-white' 
+                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+                                }`}
+                            >
+                                {p}
+                            </button>
+                        )}
+                    </React.Fragment>
+                ))}
+
+                <button 
+                    onClick={() => handlePageChange(currentPage + 1)} 
+                    disabled={currentPage === totalPages}
+                    className="p-2 border rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white"
+                >
+                    <ChevronRight className="h-4 w-4"/>
+                </button>
             </div>
         );
     };
@@ -556,27 +648,42 @@ export const Shop: React.FC = () => {
                     {isFilterOpen && <div className="fixed inset-0 bg-black/50 z-50 lg:hidden" onClick={() => setIsFilterOpen(false)} />}
 
                     <div className="flex-1">
+                        {/* Top Pagination */}
+                        {!loading && displayedProducts.length > 0 && (
+                            <div className="mb-6 flex justify-end">
+                                <PaginationControls />
+                            </div>
+                        )}
+
                         {loading && allProducts.length === 0 ? (
                             <div className={`grid gap-y-8 gap-x-6 animate-pulse ${gridMode === 'cozy' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : gridMode === 'list' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'}`}>
                                 {[1,2,3,4,5,6].map(i => <div key={i} className={`bg-gray-100 rounded-lg ${gridMode === 'list' ? 'h-48' : 'aspect-square'}`}></div>)}
                             </div>
-                        ) : filteredProducts.length > 0 ? (
-                            <div className={`grid gap-y-10 gap-x-6 ${gridMode === 'cozy' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : gridMode === 'list' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'}`}>
-                                {filteredProducts.map(product => {
-                                    // Skeletons from progressive load state
-                                    if ((product as any)._loading) {
-                                        return <div key={product.id} className={`bg-gray-100 rounded-lg animate-pulse ${gridMode === 'list' ? 'h-48' : 'aspect-square'}`}></div>;
-                                    }
-                                    return (
-                                        <ProductCard 
-                                            key={product.id} 
-                                            product={product} 
-                                            onClick={setSelectedProduct} 
-                                            viewMode={gridMode}
-                                        />
-                                    );
-                                })}
-                            </div>
+                        ) : displayedProducts.length > 0 ? (
+                            <>
+                                <div className={`grid gap-y-10 gap-x-6 ${gridMode === 'cozy' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : gridMode === 'list' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'}`}>
+                                    {displayedProducts.map(product => {
+                                        // Skeletons from progressive load state
+                                        if ((product as any)._loading) {
+                                            return <div key={product.id} className={`bg-gray-100 rounded-lg animate-pulse ${gridMode === 'list' ? 'h-48' : 'aspect-square'}`}></div>;
+                                        }
+                                        return (
+                                            <ProductCard 
+                                                key={product.id} 
+                                                product={product} 
+                                                onClick={setSelectedProduct} 
+                                                viewMode={gridMode}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                                
+                                {/* Bottom Pagination */}
+                                <div className="mt-12">
+                                    <PaginationControls />
+                                    <p className="text-xs text-gray-400 text-center mt-3">Showing {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, filteredProducts.length)} of {filteredProducts.length} items</p>
+                                </div>
+                            </>
                         ) : (
                             <div className="py-20 text-center bg-gray-50 border border-dashed rounded-lg">
                                 <Search className="h-10 w-10 text-gray-300 mx-auto mb-3" />

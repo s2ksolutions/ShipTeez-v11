@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Facebook, Twitter, Instagram, Mail, ArrowRight, Check, Linkedin, Loader2 } from 'lucide-react';
 import { useStore } from '../context/StoreProvider';
@@ -9,21 +9,32 @@ export const Footer: React.FC = () => {
     const { content, settings, activeCategories, showToast, user, setLoginModalOpen } = useStore();
     const [email, setEmail] = useState('');
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [isSubscribedLocal, setIsSubscribedLocal] = useState(false);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        // Check local storage to prevent multiple subscriptions from same client
+        if (localStorage.getItem('artisan_newsletter_sub')) {
+            setIsSubscribedLocal(true);
+            setStatus('success');
+        }
+    }, []);
 
     const handleSubscribe = async (e: React.FormEvent) => {
         e.preventDefault();
-        if(email) {
+        if(email && !isSubscribedLocal) {
             setStatus('loading');
             try {
                 await db.subscribeNewsletter(email);
                 setStatus('success');
                 showToast("Please check your email to verify your subscription.", "success");
                 setEmail('');
-                setTimeout(() => setStatus('idle'), 3000);
+                setIsSubscribedLocal(true);
+                localStorage.setItem('artisan_newsletter_sub', 'true');
             } catch (e) {
                 setStatus('error');
                 showToast("Failed to subscribe. Try again.", "error");
+                setTimeout(() => setStatus('idle'), 3000);
             }
         }
     };
@@ -55,8 +66,10 @@ export const Footer: React.FC = () => {
 
     // Extract Root Categories for simplified footer display
     const rootCategories = useMemo(() => {
+        if (!activeCategories) return [];
         const roots = new Set<string>();
         activeCategories.forEach(cat => {
+            if (!cat) return;
             const root = cat.split(' > ')[0];
             if (root) roots.add(root);
         });
@@ -130,19 +143,31 @@ export const Footer: React.FC = () => {
                         <h4 className="text-sm font-bold uppercase tracking-widest mb-6">{footerConfig.newsletterHeader}</h4>
                         <p className="text-gray-400 text-sm mb-4">{footerConfig.newsletterText}</p>
                         
-                        <form onSubmit={handleSubscribe} className="relative">
-                            <input 
-                                type="email" 
-                                placeholder="Enter your email" 
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="w-full bg-transparent border-b border-gray-700 py-3 pr-10 text-sm focus:border-white focus:outline-none placeholder-gray-500"
-                                required
-                            />
-                            <button type="submit" className="absolute right-0 top-3 text-gray-400 hover:text-white" disabled={status === 'loading'}>
-                                {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin"/> : status === 'success' ? <Check className="h-4 w-4 text-green-500" /> : <ArrowRight className="h-4 w-4" />}
-                            </button>
-                        </form>
+                        {isSubscribedLocal ? (
+                            <div className="bg-green-900/30 border border-green-800 p-4 rounded-lg flex items-center gap-3">
+                                <Check className="h-5 w-5 text-green-500" />
+                                <span className="text-green-400 text-sm font-bold">Subscribed!</span>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleSubscribe} className="relative">
+                                <input 
+                                    type="email" 
+                                    placeholder="Enter your email" 
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className="w-full bg-transparent border-b border-gray-700 py-3 pr-10 text-sm focus:border-white focus:outline-none placeholder-gray-500 text-white"
+                                    required
+                                    disabled={status === 'loading' || status === 'success'}
+                                />
+                                <button 
+                                    type="submit" 
+                                    className="absolute right-0 top-3 text-gray-400 hover:text-white disabled:opacity-50" 
+                                    disabled={status === 'loading' || status === 'success'}
+                                >
+                                    {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin"/> : <ArrowRight className="h-4 w-4" />}
+                                </button>
+                            </form>
+                        )}
                     </div>
                 </div>
 

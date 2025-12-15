@@ -1228,7 +1228,19 @@ if (($method === 'POST' || $method === 'GET') && $path === '/auth/callback') {
         jsonResponse($mapped);
     }
 
-    // Single Product Detail
+    if ($method === 'GET' && $path === '/products/categories') {
+        try {
+            $stmt = $db->query("SELECT DISTINCT category FROM products");
+            $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            // Filter out empty values and re-index array
+            $categories = array_values(array_filter($rows));
+            jsonResponse($categories);
+        } catch (Exception $e) {
+            jsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+        // Single Product Detail
     if ($method === 'GET' && preg_match('/^\/products\/(.+)$/', $path, $matches)) {
         $id = $matches[1];
         // Allow fetching by ID or Slug
@@ -1243,11 +1255,6 @@ if (($method === 'POST' || $method === 'GET') && $path === '/auth/callback') {
         } else {
             jsonResponse(['error' => 'Not found'], 404);
         }
-    }
-
-    if ($method === 'GET' && $path === '/products/categories') {
-        $stmt = $db->query("SELECT DISTINCT category FROM products");
-        jsonResponse($stmt->fetchAll(PDO::FETCH_COLUMN));
     }
 
     if ($method === 'POST' && $path === '/products') {

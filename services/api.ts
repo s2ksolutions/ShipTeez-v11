@@ -1,5 +1,5 @@
 
-import { AppSettings, User, CaptchaChallenge, SupportTicket, Subscriber, SEOSubmission, Unsubscriber, SuspensionCase, AppealDocument, Order, Attachment, CartItem } from '../types';
+import { AppSettings, User, CaptchaChallenge, SupportTicket, Subscriber, SEOSubmission, Unsubscriber, SuspensionCase, AppealDocument, Order, Attachment, CartItem, StoreContent } from '../types';
 import { securityService } from './security';
 
 // Centralized Endpoint Configuration
@@ -253,6 +253,15 @@ export const api = {
 
     getPublicSettings: (settings: AppSettings) =>
         request<Partial<AppSettings>>(settings, API_ENDPOINTS.settings.public),
+
+    getStoreContent: (settings: AppSettings) =>
+        request<StoreContent>(settings, API_ENDPOINTS.content.main),
+
+    saveStoreContent: (settings: AppSettings, content: StoreContent, token?: string) =>
+        request<void>(settings, API_ENDPOINTS.content.main, {
+            method: 'POST',
+            body: JSON.stringify(content)
+        }, token),
 
     // --- Newsletter ---
     subscribeNewsletter: (settings: AppSettings, email: string) =>
